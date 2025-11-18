@@ -5,6 +5,7 @@ import { JWT } from "next-auth/jwt";
 import { Session } from "next-auth";
 import User from "@/utils/schemas/User";
 import { walletAuthProvider } from "../app/api/walletAuthProvider/credsProvider";
+import { isWhitelisted } from "@/utils/whitelist";
 
 // Type definitions
 interface NextAuthUser {
@@ -44,6 +45,7 @@ interface CustomSession extends Session {
     wallet?: string;
     fid?: string;
     token?: string;
+    username?: string;
   } & Session["user"];
 }
 
@@ -53,7 +55,8 @@ export const authOptions = {
   ],
   callbacks: {
     async signIn({ user, account }: { user: NextAuthUser, account: Account | null }) {
-      revalidatePath('/', 'layout') 
+      revalidatePath('/', 'layout')
+      revalidatePath('/', 'page')
       await connectToDB();
       return true;
     },
@@ -100,8 +103,14 @@ export const authOptions = {
           token.wallet = dbUser.wallet;
           token.fid = dbUser.fid;
           token.token = dbUser.token;
+          token.username = dbUser.username;
         } else {
-          // Fallback to the address from user object if no DB user found
+          // Create new user with whitelist status
+          const newUser = new User({
+            wallet: user.address,
+          });
+          await newUser.save();
+          
           token.wallet = user.address;
         }
       }
@@ -122,6 +131,7 @@ export const authOptions = {
           wallet: token.wallet || token.walletAddress,
           fid: token.fid,
           token: token.token,
+          username: token.username,
         },
         expires: session.expires
       };

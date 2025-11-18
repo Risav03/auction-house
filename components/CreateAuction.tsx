@@ -27,6 +27,9 @@ import toast from "react-hot-toast";
 import { fetchTokenPrice, calculateUSDValue, formatUSDAmount } from "@/utils/tokenPrice";
 import { motion, AnimatePresence } from "framer-motion";
 import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
+import { checkStatus } from "@/utils/checkStatus";
+import { useGlobalContext } from "@/utils/providers/globalContext";
+import TwitterAuthModal from "./UI/TwitterAuthModal";
 
 
 interface CurrencyOption {
@@ -38,18 +41,22 @@ interface CurrencyOption {
 type CurrencySelectionMode = "search" | "contract";
 
 export default function CreateAuction() {
+
   const { address, isConnected } = useAccount();
+  const { isDesktopWallet, hasTwitterProfile } = useGlobalContext();
   const [auctionTitle, setAuctionTitle] = useState("");
+  const [description, setDescription] = useState("");
   // const [currencyMode, setCurrencyMode] = useState<CurrencySelectionMode>('search')
   const [selectedCurrency, setSelectedCurrency] =
     useState<CurrencyOption | null>(null);
   const [endTime, setEndTime] = useState<Date | null>(null);
-  const [minBidAmount, setMinBidAmount] = useState("0"); // Made the minimum bid amount optional and default to 0
+  const [minBidAmount, setMinBidAmount] = useState("5"); // Made the minimum bid amount optional and default to 0
   const [isLoading, setIsLoading] = useState(false);
   const { data: session } = useSession();
   const [genAuctionId, setGenAuctionId] = useState("");
   const [loadingToastId, setLoadingToastId] = useState<string | null>(null);
   const { sendCalls, isSuccess, status } = useSendCalls();
+  const [showTwitterModal, setShowTwitterModal] = useState(false);
   
   const [currentStep, setCurrentStep] = useState(0);
   const [tokenPrice, setTokenPrice] = useState<number | null>(null);
@@ -57,13 +64,15 @@ export default function CreateAuction() {
 
   const { context } = useMiniKit();
 
+  const [myCallId, setMyCallId] = useState<string | null>(null);
+
   const navigate = useNavigateWithLoader();
 
   useEffect(() => {
     // When transaction succeeds
     if (isSuccess) {
       if (loadingToastId) {
-        toast.success("Transaction successful! Saving auction details...", {
+        toast.success("Transaction successful!", {
           id: loadingToastId,
         });
       }
@@ -98,6 +107,8 @@ export default function CreateAuction() {
     try {
       // Call the API to save auction details in the database
 
+      toast.loading("Saving auction details...");
+
       const now = new Date();
       const response = await fetch("/api/protected/auctions/create", {
         method: "POST",
@@ -106,6 +117,7 @@ export default function CreateAuction() {
         },
         body: JSON.stringify({
           auctionName: auctionTitle,
+          description: description || undefined,
           blockchainAuctionId: auctionId,
           tokenAddress: selectedCurrency?.contractAddress,
           endDate: endTime,
@@ -135,6 +147,10 @@ setIsLoading(false);
           id: loadingToastId,
         });
       }
+      toast.error("Failed to save auction details. Please try again.");
+      setIsLoading(false);
+    }
+    finally{
       setIsLoading(false);
     }
   };
@@ -172,14 +188,39 @@ setIsLoading(false);
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    //check if address and session exist
+      if (!address || !session) {
+        toast.error("Please connect your wallet");
+        // return;
+      }
+    setIsLoading(true);
+
+    const res = await fetch(`/api/users/${address}/checkWhitelist`);
+    const user = await res.json();
+    console.log("Whitelist check result:", user);
+    //first check if the user is whitelisted, if not, show error toast and return
+    if (!user?.whitelisted) {
+      toast.error("You are not whitelisted to create an auction");
+      
+      return;
+    }
+
     // Validation
     if (!auctionTitle || !selectedCurrency || !endTime) {
       toast.error("Please fill in all required fields with valid values");
+      setIsLoading(false);
+      return;
+    }
+
+    if (auctionTitle.length > 30) {
+      toast.error("Auction title cannot exceed 30 characters");
+      setIsLoading(false);
       return;
     }
 
     if (!isConnected || !address) {
       toast.error("Please connect your wallet to create an auction");
+      setIsLoading(false);
       return;
     }
 
@@ -187,10 +228,9 @@ setIsLoading(false);
     const now = new Date();
     if (endTime <= now) {
       toast.error("Auction end time must be in the future");
+      setIsLoading(false);
       return;
     }
-
-    setIsLoading(true);
     
     // Start loading toast
     const toastId = toast.loading("Creating auction...");
@@ -228,7 +268,7 @@ setIsLoading(false);
         
         const contract = await writeContractSetup(contractAdds.auctions, auctionAbi);
 
-        toast.loading("Waiting for transaction confirmation...", { id: toastId });
+        toast.loading("Waiting for transaction...", { id: toastId });
         
         // Call the smart contract
         const txHash = await contract?.startAuction(
@@ -243,7 +283,13 @@ setIsLoading(false);
         
         await txHash?.wait();
 
-        toast.loading("Transaction confirmed! Saving auction details...", { id: toastId });
+        if(!txHash){
+          toast.error("Transaction failed to send", { id: toastId });
+          setIsLoading(false);
+          return;
+        }
+
+        toast.loading("Transaction confirmed!", { id: toastId });
 
         await processSuccess(auctionId);
       } 
@@ -263,8 +309,8 @@ setIsLoading(false);
                 auctionId,
                 selectedCurrency.contractAddress as `0x${string}`,
                 selectedCurrency.symbol,
-                numberToHex(BigInt(durationHours)),
-                numberToHex(minBidAmountWei),
+                BigInt(durationHours),
+                minBidAmountWei
               ],
             }),
           },
@@ -275,7 +321,7 @@ setIsLoading(false);
           
           const provider = createBaseAccountSDK({
             appName: "Bill test app",
-            appLogoUrl: "https://farcaster-miniapp-chi.vercel.app/pfp.jpg",
+            appLogoUrl: "https://www.houseproto.fun/pfp.jpg",
             appChainIds: [base.constants.CHAIN_IDS.base],
           }).getProvider();
 
@@ -284,21 +330,30 @@ setIsLoading(false);
 
           toast.loading("Submitting transaction...", { id: toastId });
 
-          const result = await provider.request({
+          const callsId:any = await provider.request({
             method: "wallet_sendCalls",
             params: [
               {
-                version: "2.0.0",
-                from: fromAddress,
+                version: "1.0",
                 chainId: numberToHex(base.constants.CHAIN_IDS.base),
-                atomicRequired: true,
-                calls: calls,
+                from: fromAddress,
+                calls: calls
               },
             ],
           });
 
-          toast.loading("Processing transaction...", { id: toastId });
-          
+          toast.loading("Transaction submitted, checking status...", { id: toastId });
+
+          const result = await checkStatus(callsId);
+
+          if (result == true) {
+            toast.loading("Transaction confirmed!", { id: toastId });
+            await processSuccess(auctionId);
+          } else {
+            toast.error("Transaction failed or timed out", { id: toastId });
+            setIsLoading(false);
+          }
+
         } else {
           toast.loading("Waiting for wallet confirmation...", { id: toastId });
           
@@ -336,8 +391,6 @@ setIsLoading(false);
       } else {
         toast.error(errorMessage);
       }
-    } finally {
-      setLoadingToastId(null);
     }
   };
 
@@ -372,9 +425,15 @@ setIsLoading(false);
   };
 
   const handleNext = () => {
-    if (canGoNext() && currentStep < 3) {
-      setCurrentStep(currentStep + 1);
+    if (!canGoNext() || currentStep >= 3) return;
+    
+    // Check Twitter auth after auction name is entered (step 0)
+    if (currentStep === 0 && isDesktopWallet && !hasTwitterProfile) {
+      setShowTwitterModal(true);
+      return;
     }
+    
+    setCurrentStep(currentStep + 1);
   };
 
   const handlePrev = () => {
@@ -436,10 +495,32 @@ setIsLoading(false);
                   <Input
                     label="Auction Title"
                     value={auctionTitle}
-                    onChange={setAuctionTitle}
-                    placeholder="Enter a title for your auction"
+                    onChange={(value) => {
+                      if (value.length <= 30) {
+                        setAuctionTitle(value);
+                      }
+                    }}
+                    placeholder="Enter a title for your auction (max 30 chars)"
                     required
                   />
+                  <div className="text-xs text-gray-400 text-right">
+                    {auctionTitle.length}/30 characters
+                  </div>
+                  <Input
+                    label="Description (Optional)"
+                    value={description}
+                    onChange={(value) => {
+                      if (value.length <= 200) {
+                        setDescription(value);
+                      }
+                    }}
+                    placeholder="Enter a description for your auction (max 200 chars)"
+                    multiline
+                    rows={3}
+                  />
+                  <div className="text-xs text-gray-400 text-right">
+                    {description.length}/200 characters
+                  </div>
                 </motion.div>
               )}
 
@@ -551,7 +632,7 @@ setIsLoading(false);
               )}
             </AnimatePresence>
 
-            <div className="mt-8 space-y-4">
+            <div className="mt-8 space-y-4 absolute bottom-4 left-0 w-full px-6">
               <div className="flex justify-between items-center gap-4">
                 <button
                   type="button"
@@ -601,7 +682,7 @@ setIsLoading(false);
                         ? "bg-primary"
                         : step < currentStep
                         ? "bg-primary/50"
-                        : "bg-gray-300"
+                        : "bg-primary/10"
                     }`}
                   />
                 ))}
@@ -609,6 +690,16 @@ setIsLoading(false);
             </div>
           </div>
         </form>
+
+        <TwitterAuthModal 
+          isOpen={showTwitterModal}
+          onClose={() => setShowTwitterModal(false)}
+          onSuccess={() => {
+            // Close modal and proceed to next step after successful Twitter auth
+            setShowTwitterModal(false);
+            setCurrentStep(currentStep + 1);
+          }}
+        />
       </div>
     );
 }

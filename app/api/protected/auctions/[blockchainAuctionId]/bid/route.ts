@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/utils/db';
 import Auction, { IBidder } from '@/utils/schemas/Auction';
 import User from '@/utils/schemas/User';
+import WeeklyBidderLeaderboard from '@/utils/schemas/WeeklyBidderLeaderboard';
 import { getServerSession } from 'next-auth';
+import { fetchTokenPrice } from '@/utils/tokenPrice';
+import { getWeekBoundaries } from '@/utils/weekHelpers';
 
 export async function POST(req: NextRequest) {
   console.log("=== BID API ROUTE STARTED ===");
@@ -70,12 +73,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Find or create the user
-    console.log("👤 Looking for user with wallet:", userWallet.toLowerCase());
-    let user = await User.findOne({ wallet: userWallet.toLowerCase() });
+    let user = await User.findOne({ wallet: userWallet });
     if (!user) {
       console.log("👤 User not found, creating new user...");
       user = new User({
-        wallet: userWallet.toLowerCase(),
+        wallet: userWallet,
         participatedAuctions: []
       });
       await user.save();
@@ -116,9 +118,26 @@ export async function POST(req: NextRequest) {
 
     // Add the bid to the auction
     console.log("📝 Adding bid to auction...");
+    
+    // Calculate USD value for the bid
+    let usdcValue: number | undefined = undefined;
+    try {
+      const isUSDC = auction.tokenAddress?.toLowerCase() === '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+      if (isUSDC) {
+        usdcValue = bidAmount;
+      } else {
+        const tokenPrice = await fetchTokenPrice(auction.tokenAddress);
+        usdcValue = bidAmount * tokenPrice;
+      }
+      console.log("💵 Calculated USD value:", usdcValue);
+    } catch (error) {
+      console.error("⚠️ Failed to calculate USD value:", error);
+    }
+    
     const newBid = {
       user: user._id,
       bidAmount,
+      usdcValue,
       bidTimestamp: new Date()
     };
     auction.bidders.push(newBid);
@@ -136,6 +155,42 @@ export async function POST(req: NextRequest) {
       console.log("✅ User updated with participated auction");
     } else {
       console.log("ℹ️ User already has this auction in participated auctions");
+    }
+
+    // Update weekly leaderboard if bid is >= $10 USD and user is not the auction host
+    if (usdcValue && usdcValue >= 10 && auction.hostedBy.toString() !== user._id.toString()) {
+      console.log("📊 Updating weekly leaderboard...");
+      try {
+        const { weekStartDate, weekEndDate } = getWeekBoundaries();
+        
+        const existingEntry = await WeeklyBidderLeaderboard.findOne({
+          user: user._id,
+          weekStartDate,
+        });
+
+        if (existingEntry) {
+          existingEntry.totalSpentUSD += usdcValue;
+          existingEntry.bidCount += 1;
+          await existingEntry.save();
+          console.log("✅ Updated existing weekly leaderboard entry");
+        } else {
+          await WeeklyBidderLeaderboard.create({
+            user: user._id,
+            weekStartDate,
+            weekEndDate,
+            totalSpentUSD: usdcValue,
+            bidCount: 1,
+            claimed: false,
+            rewardAmount: 0,
+          });
+          console.log("✅ Created new weekly leaderboard entry");
+        }
+      } catch (error) {
+        console.error("⚠️ Failed to update weekly leaderboard:", error);
+        // Don't fail the bid if leaderboard update fails
+      }
+    } else {
+      console.log("ℹ️ Bid not eligible for weekly leaderboard (< $10 or bidding on own auction)");
     }
 
     const responseData = {

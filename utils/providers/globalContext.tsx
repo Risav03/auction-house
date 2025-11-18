@@ -13,6 +13,7 @@ import { generateNonce } from "siwe";
 import { signOut, useSession } from "next-auth/react";
 import { ethers } from "ethers";
 import { useAccount } from "wagmi";
+import toast from "react-hot-toast";
 
 // Custom session interface to include wallet and fid
 interface CustomSession {
@@ -23,6 +24,7 @@ interface CustomSession {
     wallet?: string;
     fid?: string;
     token?: string;
+    username?: string;
   };
   wallet?: string;
   fid?: string;
@@ -34,6 +36,10 @@ interface GlobalContextProps {
   user: any;
   authenticatedUser: any;
   isAuthenticated: boolean;
+  isDesktopWallet: boolean;
+  hasTwitterProfile: boolean;
+  authenticateWithTwitter: () => Promise<void>;
+  refreshTwitterProfile: () => Promise<void>;
 }
 
 // Create a context with a default value matching the expected structure
@@ -43,13 +49,50 @@ export const GlobalProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession() as { data: CustomSession | null };
   const { context } = useMiniKit();
   const { signIn } = useAuthenticate();
+  const { login } = usePrivy();
   const [user, setUser] = useState<any | null>(null);
   const [authenticatedUser, setAuthenticatedUser] = useState<any | null>(null);
+  const [hasTwitterProfile, setHasTwitterProfile] = useState<boolean>(false);
   const {address, isDisconnected} = useAccount()
+
+  // Check if user is using desktop wallet (no MiniKit context)
+  const isDesktopWallet = !context?.client;
+
+  const authenticateWithTwitter = async (): Promise<void> => {
+    try {
+      await login();
+    } catch (error) {
+      console.error('Twitter authentication error:', error);
+      toast.error('Failed to authenticate with Twitter');
+    }
+  };
+
+  const refreshTwitterProfile = async (): Promise<void> => {
+    await checkTwitterProfile();
+  };
+
+  const checkTwitterProfile = async () => {
+    if (session?.wallet) {
+      try {
+        console.log('Checking Twitter profile for wallet:', session.wallet);
+        const response = await fetch(`/api/users/${session.wallet}`);
+        if (response.ok) {
+          const userData = await response.json();
+          console.log('User data:', userData);
+          const hasTwitter = !!userData.user?.twitterProfile?.id;
+          console.log('Has Twitter profile:', hasTwitter);
+          setHasTwitterProfile(hasTwitter);
+        }
+      } catch (error) {
+        console.error('Error checking Twitter profile:', error);
+      }
+    }
+  };
 
   const updateUserFid = async () => {
     try {
-      if (session?.user?.fid && session.user.fid.startsWith('none') && address && context?.user?.fid) {
+      
+      if (session?.fid && session.fid.startsWith('none') && address && context?.user?.fid) {
         const response = await fetch('/api/protected/user/update-fid', {
           method: 'POST',
           headers: {
@@ -74,7 +117,6 @@ export const GlobalProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const handleUserDetails = async (): Promise<void> => {
-    if (user) return;
     try {
       let user: any = null;
 
@@ -89,6 +131,34 @@ export const GlobalProvider = ({ children }: { children: React.ReactNode }) => {
         console.log("Session wallet:", session.wallet);
 
         const walletAddress = session.wallet;
+
+        // First, try to fetch user from database
+        try {
+          const dbResponse = await fetch(`/api/users/${walletAddress}`);
+
+          console.log("Database response status:", dbResponse);
+
+          if (dbResponse.ok) {
+            const dbUser = await dbResponse.json();
+
+            console.log("Database user fetched:", dbUser);
+
+            if (dbUser.user && dbUser.user.username) {
+              // Use database username and profile data
+              user = {
+                username: dbUser.user.username,
+                pfp_url: dbUser.user.pfp_url || `https://api.dicebear.com/5.x/identicon/svg?seed=${walletAddress}`,
+                fid: dbUser.user.fid || walletAddress,
+              };
+              setUser(user);
+              return;
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching user from database:", error);
+        }
+
+        // Fallback to ENS/wallet display if no database user found
         const provider = new ethers.providers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
 
         // Fetch ENS name
@@ -108,7 +178,7 @@ export const GlobalProvider = ({ children }: { children: React.ReactNode }) => {
 
         // Fallback image generation
         if (!ensImage) {
-          ensImage = `https://api.dicebear.com/5.x/identicon/svg?seed=${walletAddress.toLowerCase()}`;
+          ensImage = `https://api.dicebear.com/5.x/identicon/svg?seed=${walletAddress}`;
         }
 
         user = {
@@ -130,8 +200,9 @@ export const GlobalProvider = ({ children }: { children: React.ReactNode }) => {
         sdk.actions.ready();
       }
 
-      if (session?.user) {
+      if (session) {
         handleUserDetails();
+        checkTwitterProfile();
         
         // Check and update FID if conditions are met
         if (session && address && context?.user) {
@@ -147,6 +218,10 @@ export const GlobalProvider = ({ children }: { children: React.ReactNode }) => {
         user,
         authenticatedUser,
         isAuthenticated: !!authenticatedUser,
+        isDesktopWallet,
+        hasTwitterProfile,
+        authenticateWithTwitter,
+        refreshTwitterProfile,
       }}
     >
       {children}

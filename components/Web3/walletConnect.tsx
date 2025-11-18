@@ -4,13 +4,29 @@ import Image from 'next/image';
 import { MdWallet } from 'react-icons/md';
 import { CiLogin } from "react-icons/ci";
 import { signOut } from "next-auth/react";
+import { useState } from 'react';
+import ProfileDrawer from '../UI/ProfileDrawer';
 
-export const WalletConnect = () => {
+interface WalletConnectProps {
+  onProfileClick?: () => void;
+}
+
+export const WalletConnect = ({ onProfileClick }: WalletConnectProps = {}) => {
 
   const {user} = useGlobalContext();
+  const [isProfileDrawerOpen, setIsProfileDrawerOpen] = useState(false);
+
+  const handleProfileClick = () => {
+    if (onProfileClick) {
+      onProfileClick();
+    } else {
+      setIsProfileDrawerOpen(true);
+    }
+  };
 
   return (
-    <ConnectButton.Custom>
+    <>
+      <ConnectButton.Custom>
       {({
         account,
         chain,
@@ -51,7 +67,7 @@ export const WalletConnect = () => {
                   <button
                     onClick={openConnectModal}
                     type="button"
-                    className=" text-center w-full flex gap-1 px-2 py-1 gradient-button items-center justify-center rounded text-md font-bold text-white "
+                    className=" text-center w-full flex gap-1 px-2 max-lg:py-1 py-3 gradient-button items-center justify-center rounded text-md font-bold text-white "
                   >
                     Login<CiLogin className='text-xl'/>
                   </button>
@@ -69,25 +85,47 @@ export const WalletConnect = () => {
                 );
               }
 
-              if(user && user?.pfp_url !== "" && user?.username !== "")
+              // If user exists and has complete profile info, show profile
+              if(user && user?.pfp_url !== "" && user?.username !== "") {
+                return (
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <button
+                      onClick={handleProfileClick}
+                      type="button"
+                      className=" flex bg-primary/10 lg:p-2 items-center gap-2 text-center w-full rounded-lg text-md font-bold text-white hover:bg-primary/20 transition-colors"
+                    >
+                      <div className='flex items-center gap-2'>
+                        <Image unoptimized
+                          alt="Profile Picture"
+                          src={user?.pfp_url}
+                          width={40}
+                          height={40}
+                          className="lg:w-8 lg:h-8 h-6 w-6 aspect-square border border-primary rounded-md"
+                        />
+                        <div className='flex flex-col text-left max-lg:hidden'>
+                          <span className='text-sm font-medium'>{user?.username}</span>
+                          </div>
+                      </div>
+                    </button>
+                  </div>
+                );
+              }
+
+              // Fallback for when user exists but profile is incomplete
               return (
                 <div style={{ display: 'flex', gap: 12 }}>
                   <button
-                    onClick={openAccountModal}
+                    onClick={handleProfileClick}
                     type="button"
-                    className=" flex bg-primary/10 lg:p-2 items-center gap-2 text-center w-full rounded-lg text-md font-bold text-white"
+                    className=" flex bg-primary/10 lg:p-2 items-center gap-2 text-center w-full rounded-lg text-md font-bold text-white hover:bg-primary/20 transition-colors"
                   >
                     <div className='flex items-center gap-2'>
-                      <Image unoptimized
-                        alt="Profile Picture"
-                        src={user?.pfp_url}
-                        width={40}
-                        height={40}
-                        className="lg:w-8 lg:h-8 h-6 w-6 aspect-square border border-primary rounded-md"
-                      />
+                      <div className="lg:w-8 lg:h-8 h-6 w-6 aspect-square border border-primary rounded-md bg-gray-600 flex items-center justify-center">
+                        <MdWallet className='text-sm' />
+                      </div>
                       <div className='flex flex-col text-left max-lg:hidden'>
-                        <span className='text-sm font-medium'>{user?.username}</span>
-                        </div>
+                        <span className='text-sm font-medium'>{account.displayName}</span>
+                      </div>
                     </div>
                   </button>
                 </div>
@@ -97,5 +135,11 @@ export const WalletConnect = () => {
         );
       }}
     </ConnectButton.Custom>
-  );
+    
+    <ProfileDrawer 
+      isOpen={isProfileDrawerOpen} 
+      onClose={() => setIsProfileDrawerOpen(false)} 
+    />
+  </>
+);
 };

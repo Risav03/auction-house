@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { RiLoader5Fill, RiArrowLeftLine } from 'react-icons/ri'
+import { RiLoader5Fill, RiArrowLeftLine, RiUserLine } from 'react-icons/ri'
 import UserAuctions from '@/components/UserAuctions'
+import { useMiniKit } from '@coinbase/onchainkit/minikit'
+import { sdk } from '@farcaster/miniapp-sdk'
 
 interface UserData {
   user: {
@@ -14,6 +16,7 @@ interface UserData {
     pfp_url?: string | null
     display_name?: string | null
     bio?: string | null
+    x_username?: string | null
   }
   activeAuctions: any[]
   endedAuctions: any[]
@@ -27,6 +30,20 @@ export default function UserPage() {
   const [userData, setUserData] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const {context} = useMiniKit()
+
+  const handleViewProfile = async () => {
+    if (context && userData?.user.fid) {
+      try {
+        await sdk.actions.viewProfile({ 
+          fid: parseInt(userData.user.fid)
+        })
+      } catch (error) {
+        console.error('Error viewing profile:', error)
+      }
+    }
+  }
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -93,7 +110,7 @@ export default function UserPage() {
 
   return (
     <div className="min-h-screen py-8 max-lg:pt-4">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Back Button */}
         <button
           onClick={() => router.back()}
@@ -104,8 +121,8 @@ export default function UserPage() {
         </button>
 
         {/* User Header */}
-        <div className="bg-white/10 rounded-lg shadow-md lg:p-6 p-4 mb-8 border border-white/10">
-          <div className="flex items-start gap-4 mb-4">
+        <div className="bg-white/10 rounded-lg shadow-md lg:p-4 p-2 mb-8 border border-white/10">
+          <div className="flex items-center gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex max-lg:flex-col items-center justify-between gap-2">
                 <div>
@@ -126,12 +143,49 @@ export default function UserPage() {
                     {userData.user.bio && (
                 <p className="text-white/80 text-xs my-3 line-clamp-2">{userData.user.bio}</p>
               )}
+              <div className='flex gap-2 w-full items-center justify-center'>
+                {userData.user.x_username && (
+                <div className="">
+                  <a 
+                    href={`https://x.com/${userData.user.x_username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-xs bg-white/10 border border-white/20 rounded-md p-2 text-white font-bold transition-colors"
+                  >
+                    @{userData.user.x_username}
+                    <svg 
+                      className="w-3 h-3" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
                 </div>
-                <div className="lg:text-right text-center">
-                  <p className="text-caption text-xs">Total Auctions</p>
-                  <p className="text-2xl font-bold text-primary">
-                    {userData.activeAuctions.length + userData.endedAuctions.length}
-                  </p>
+              )}
+                {context && userData.user.fid && (
+                    <button
+                      onClick={handleViewProfile}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-primary/20 border border-primary/30 text-primary rounded-lg hover:bg-primary/30 transition-colors text-sm font-medium"
+                    >
+                      <RiUserLine className="text-sm" />
+                      Profile
+                    </button>
+                  )}
+
+              </div>
+                    
+                </div>
+                <div className="lg:text-right text-center flex flex-col items-center gap-2">
+                  {/* View Profile Button - only show if context is available and user has fid */}
+                  
+                  <div>
+                    <p className="text-caption text-xs">Total Auctions</p>
+                    <p className="text-2xl font-bold text-primary">
+                      {userData.activeAuctions.length + userData.endedAuctions.length}
+                    </p>
+                  </div>
                 </div>
               </div>
 

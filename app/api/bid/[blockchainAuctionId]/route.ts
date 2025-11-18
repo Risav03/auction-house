@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Auction, { IAuction } from '../../../../utils/schemas/Auction';
 import connectToDB from '@/utils/db';
 import { fetchTokenPrice, calculateUSDValue } from '@/utils/tokenPrice';
+import { getServerSession } from 'next-auth';
 
 interface ContractBidder {
   bidder: string;
@@ -22,6 +23,7 @@ export async function POST(
   req: NextRequest
 ) {
   try {
+    
     await connectToDB();
     
     const blockchainAuctionId = req.nextUrl.pathname.split('/')[3];
@@ -48,7 +50,10 @@ export async function POST(
     // Find auction in database
     const auction = await Auction.findOne({ blockchainAuctionId })
       .populate('bidders.user', 'wallet username fid')
-      .lean() as IAuction | null;
+      .populate('hostedBy')
+      .lean() as any | null;
+
+      console.log('Fetched auction from DB:', auction);
     
     if (!auction) {
       return NextResponse.json(
@@ -191,15 +196,54 @@ export async function POST(
       ? Math.max(...bidders.map(b => Number(b.bidAmount)))
       : 0;
 
+    // Process hostedBy to add enhanced user data from Neynar
+    let enhancedHostedBy = { ...(auction.hostedBy as any) };
+    const hostFid = (auction.hostedBy as any)?.fid;
+    
+    if (hostFid && hostFid !== '' && !hostFid.startsWith('none')) {
+      try {
+        const neynarResponse = await fetch(
+          `https://api.neynar.com/v2/farcaster/user/bulk?fids=${hostFid}`,
+          {
+            headers: {
+              "x-api-key": process.env.NEYNAR_API_KEY as string,
+            },
+          }
+        );
+
+        if (neynarResponse.ok) {
+          const neynarData = await neynarResponse.json();
+          const neynarUser = neynarData.users?.[0];
+          
+          if (neynarUser) {
+            enhancedHostedBy.username = neynarUser.username || enhancedHostedBy.username;
+            enhancedHostedBy.display_name = neynarUser.display_name;
+            enhancedHostedBy.pfp_url = neynarUser.pfp_url;
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching host data from Neynar:', error);
+      }
+    }
+
+    // If no valid FID or Neynar fetch failed, use fallback data
+    if (!enhancedHostedBy.username || enhancedHostedBy.username === '') {
+      const wallet = enhancedHostedBy.wallet;
+      enhancedHostedBy.username = auction.hostedBy.username || (wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : wallet);
+    }
+
     // Prepare response with auction info and processed bidders
     const response = {
       auctionName: auction.auctionName,
+      description: auction.description,
       auctionStatus,
       endDate: auction.endDate,
       currency: auction.currency,
       tokenAddress: auction.tokenAddress,
       highestBid: highestBid.toString(),
-      bidders: processedBidders
+      minimumBid: auction.minimumBid.toString(),
+      bidders: processedBidders,
+      hostedBy: enhancedHostedBy
     };
 
     return NextResponse.json(response);

@@ -11,12 +11,13 @@ export interface IBidder {
 // Interface for the Auction document
 export interface IAuction extends Document {
   auctionName: string;
+  description?: string;
   endDate: Date;
   bidders: IBidder[];
   currency: string;
   startDate: Date;
   hostedBy: Types.ObjectId;
-  winningBid?: Types.ObjectId;
+  winningBid?: Types.ObjectId | string;
   minimumBid: number;
   reservePrice?: number;
   hostFeePercentage: number;
@@ -24,6 +25,8 @@ export interface IAuction extends Document {
   createdAt: Date;
   updatedAt: Date;
   tokenAddress: string;
+  enabled: boolean;
+  status: 'ongoing' | 'ended' | 'paused';
 }
 
 // Sub-schema for bidders
@@ -60,6 +63,12 @@ const AuctionSchema: Schema = new Schema(
       trim: true,
       maxlength: 200,
     },
+    description: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 200,
+    },
     endDate: {
       type: Date,
       required: true,
@@ -89,9 +98,12 @@ const AuctionSchema: Schema = new Schema(
       ref: 'User',
       required: true,
     },
+    enabled: {
+      type: Boolean,
+      default: true,
+    },
     winningBid: {
-      type: Schema.Types.ObjectId,
-      ref: 'WinningBid',
+      type: Schema.Types.Mixed,
       default: null,
     },
     minimumBid: {
@@ -108,6 +120,11 @@ const AuctionSchema: Schema = new Schema(
       type: String,
       required: true,
       trim: true,
+    },
+    status: {
+      type: String,
+      enum: ['ongoing', 'ended', 'paused'],
+      default: 'ongoing',
     },
   },
   {

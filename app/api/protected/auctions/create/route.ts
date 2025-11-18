@@ -13,21 +13,35 @@ export async function POST(req: NextRequest) {
     }
   try {
     const body = await req.json();
-    const { auctionName, tokenAddress, endDate, startDate, hostedBy, minimumBid, blockchainAuctionId, currency, creationHash } = body;
+    const { auctionName, description, tokenAddress, endDate, startDate, hostedBy, minimumBid, blockchainAuctionId, currency, creationHash } = body;
+
+    console.log('Creating auction with data:', body);
 
     if (!auctionName || !tokenAddress || !endDate || !startDate || !hostedBy || !minimumBid) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    if (auctionName.length > 30) {
+      return NextResponse.json({ error: 'Auction title cannot exceed 30 characters' }, { status: 400 });
+    }
+
+    if (description && description.length > 200) {
+      return NextResponse.json({ error: 'Description cannot exceed 200 characters' }, { status: 400 });
+    }
+
     await dbConnect();
 
     var user = await User.findOne({ wallet: hostedBy });
+
+    console.log('Hosting user:', user);
+
     if (!user) {
       return NextResponse.json({ error: 'Hosting user not found' }, { status: 404 });
     }
 
     const newAuction = new Auction({
       auctionName,
+      description: description || undefined,
       currency,
       tokenAddress,
       blockchainAuctionId,

@@ -8,7 +8,10 @@ import { WalletConnect } from "../Web3/walletConnect"
 import { useNavigateWithLoader } from "@/utils/useNavigateWithLoader"
 import { useRouter, usePathname } from "next/navigation"
 import SearchBar from "./SearchBar"
-import { RiSearchLine } from "react-icons/ri"
+import { RiSearchLine, RiInformationLine, RiAddCircleLine, RiTrophyLine, RiQrScanLine, RiUserLine } from "react-icons/ri"
+import { useSession } from "next-auth/react"
+import { GoDotFill } from "react-icons/go";
+
 
 export default function Navbar(){
 
@@ -36,24 +39,20 @@ export default function Navbar(){
         }
     }, [isMenuOpen])
 
-    const handleCreateAuctionClick = (e: React.MouseEvent) => {
+    const handleNavClick = (e: React.MouseEvent, path: string) => {
         e.preventDefault()
         setIsMenuOpen(false)
-        navigateWithLoader('/create')
-    }
-
-    const handleMyAuctionsClick = (e: React.MouseEvent) => {
-        e.preventDefault()
-        setIsMenuOpen(false)
-        navigateWithLoader('/my-auctions')
+        navigateWithLoader(path)
     }
 
     const router = useRouter()
 
+    const {data:session} = useSession()
+
     return (
         <>
             {/* Search Bar Overlay */}
-            <SearchBar isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+            {session && <SearchBar isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />}
 
             {/* Mobile Navbar */}
             <div className="relative z-50 lg:hidden" ref={mobileMenuRef}>
@@ -62,16 +61,16 @@ export default function Navbar(){
                     
                     <div className="flex items-center gap-4">
                         {/* Search Button */}
-                        <button 
+                       {session && <button 
                             onClick={() => setIsSearchOpen(true)}
                             className="text-primary hover:text-white transition-colors"
                         >
                             <RiSearchLine className="text-xl" />
-                        </button>
+                        </button>}
 
                         {/* WalletConnect or Hamburger Menu */}
                         <WalletConnect />
-                        {user &&(
+                        {session && (
                             <button 
                                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                                 className="flex flex-col gap-1 w-6 h-6 justify-center items-center"
@@ -85,28 +84,78 @@ export default function Navbar(){
                 </div>
 
                 {/* Mobile Dropdown Menu */}
-                {user && (
+                {session && (
                     <ul className={`fixed w-full top-12 ${isMenuOpen ? "" : "opacity-0 pointer-events-none"} duration-200 shadow-primary/30 bg-black/80 backdrop-blur-3xl rounded-b-lg shadow-lg overflow-hidden z-50`}>
                         <li className="border-b border-primary/50">
                             <a 
-                            href="/create"
-                            onClick={handleCreateAuctionClick}
-                            className={`block px-4 py-3 font-semibold transition-colors cursor-pointer w-full ${
-                                pathname === '/create' ? 'text-primary' : 'text-white'
+                            href="/profile"
+                            onClick={(e) => handleNavClick(e, '/profile')}
+                            className={`flex items-center gap-2 px-4 py-3 font-semibold transition-colors cursor-pointer w-full ${
+                                pathname === '/profile' ? 'text-primary' : 'text-white'
                             }`}
                         >
-                            Create Auction
+                            <RiUserLine className="text-lg" />
+                            My Profile
                         </a>
                         </li>
                         <li className="border-b border-primary/50">
                             <a 
-                            href="/my-auctions"
-                            onClick={handleMyAuctionsClick}
-                            className={`block px-4 py-3 font-semibold transition-colors cursor-pointer w-full ${
-                                pathname === '/my-auctions' ? 'text-primary' : 'text-white'
+                            href="/"
+                            onClick={(e) => handleNavClick(e, '/')}
+                            className={`flex items-center gap-2 px-4 py-3 font-semibold transition-colors cursor-pointer w-full ${
+                                pathname === '/' ? 'text-primary' : 'text-white'
                             }`}
                         >
-                            My Auctions
+                            <GoDotFill className="text-lg animate-pulse" />
+                            Live Auctions
+                        </a>
+                        </li>
+                        <li className="border-b border-primary/50">
+                            <a 
+                            href="/info"
+                            onClick={(e) => handleNavClick(e, '/info')}
+                            className={`flex items-center gap-2 px-4 py-3 font-semibold transition-colors cursor-pointer w-full ${
+                                pathname === '/info' ? 'text-primary' : 'text-white'
+                            }`}
+                        >
+                            <RiInformationLine className="text-lg" />
+                            How House Works
+                        </a>
+                        </li>
+                        <li className="border-b border-primary/50">
+                            <a 
+                            href="/create"
+                            onClick={(e) => handleNavClick(e, '/create')}
+                            className={`flex items-center gap-2 px-4 py-3 font-semibold transition-colors cursor-pointer w-full ${
+                                pathname === '/create' ? 'text-primary' : 'text-white'
+                            }`}
+                        >
+                            <RiAddCircleLine className="text-lg" />
+                            Start Your Auction
+                        </a>
+                        </li>
+                        <li className="border-b border-primary/50">
+                            <a 
+                            href="/leaderboard"
+                            onClick={(e) => handleNavClick(e, '/leaderboard')}
+                            className={`flex items-center gap-2 px-4 py-3 font-semibold transition-colors cursor-pointer w-full text-nowrap ${
+                                pathname === '/leaderboard' ? 'text-primary' : 'text-white'
+                            }`}
+                        >
+                            <RiTrophyLine className="text-lg" />
+                            Global Leaderboard
+                        </a>
+                        </li>
+                        <li className="border-b border-primary/50">
+                            <a 
+                            href="/earn"
+                            onClick={(e) => handleNavClick(e, '/earn')}
+                            className={`flex items-center gap-2 px-4 py-3 font-semibold transition-colors cursor-pointer w-full ${
+                                pathname === '/earn' ? 'text-primary' : 'text-white'
+                            }`}
+                        >
+                            <RiQrScanLine className="text-lg" />
+                            Weekly Rewards
                         </a>
                         </li>
                     </ul>
@@ -116,13 +165,13 @@ export default function Navbar(){
             {/* Desktop Sidebar */}
             <div className="hidden lg:flex lg:fixed lg:left-0 lg:top-0 lg:h-full lg:w-64 lg:flex-col lg:bg-black/90 lg:backdrop-blur-sm lg:border-r lg:border-r-secondary/50 lg:z-50">
                 {/* Sidebar Header */}
-                <div className="p-6  flex items-center justify-between">
+                <div className="p-6  flex items-center justify-start gap-4">
                 <Image src="/pfp.jpg" alt="Logo" width={32} height={32} className="scale-125 border-primary/10 rounded-lg border" />
-                    <button onClick={()=>{router.push("/")}} className="text-xl font-bold text-white cursor-pointer hover:text-primary transition-colors">Auction House</button>
+                    <button onClick={()=>{router.push("/")}} className="text-xl font-bold text-white cursor-pointer hover:text-primary transition-colors">House</button>
                 </div>
 
                 {/* Search Button */}
-                <div className="px-4 mb-4">
+                {session && <div className="px-4 mb-4">
                     <button
                         onClick={() => setIsSearchOpen(true)}
                         className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-primary/30 transition-colors text-caption hover:text-white"
@@ -130,33 +179,87 @@ export default function Navbar(){
                         <RiSearchLine className="text-xl" />
                         <span>Search Users</span>
                     </button>
-                </div>
+                </div>}
 
                 {/* Sidebar Content */}
                 <div className="flex-1 p-4">
-                    <nav className="space-y-4">
+                    <nav className="space-y-2">
+                        <a 
+                            href="/profile"
+                            onClick={(e) => handleNavClick(e, '/profile')}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${
+                                pathname === '/profile' 
+                                    ? 'text-primary bg-primary/20 border border-primary/30' 
+                                    : 'text-primary hover:bg-primary/10'
+                            }`}
+                        >
+                            <RiUserLine className="text-xl" />
+                            <span className="text-md">My Profile</span>
+                        </a>
+                        
+                        <a 
+                            href="/"
+                            onClick={(e) => handleNavClick(e, '/')}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${
+                                pathname === '/' 
+                                    ? 'text-primary bg-primary/20 border border-primary/30' 
+                                    : 'text-primary hover:bg-primary/10'
+                            }`}
+                        >
+                            <GoDotFill className="text-xl animate-pulse" />
+                            <span className="text-md">Live Auctions</span>
+                        </a>
+                        
+                        <a 
+                            href="/info"
+                            onClick={(e) => handleNavClick(e, '/info')}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${
+                                pathname === '/info' 
+                                    ? 'text-primary bg-primary/20 border border-primary/30' 
+                                    : 'text-primary hover:bg-primary/10'
+                            }`}
+                        >
+                            <RiInformationLine className="text-xl" />
+                            <span className="text-md">How House Works</span>
+                        </a>
+                        
                         <a 
                             href="/create"
-                            onClick={handleCreateAuctionClick}
-                            className={`flex items-center px-4 py-3 rounded-lg transition-colors cursor-pointer ${
+                            onClick={(e) => handleNavClick(e, '/create')}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${
                                 pathname === '/create' 
                                     ? 'text-primary bg-primary/20 border border-primary/30' 
                                     : 'text-primary hover:bg-primary/10'
                             }`}
                         >
-                            <span className="text-lg">Create Auction</span>
+                            <RiAddCircleLine className="text-xl" />
+                            <span className="text-md">Start Your Auction</span>
                         </a>
                         
                         <a 
-                            href="/my-auctions"
-                            onClick={handleMyAuctionsClick}
-                            className={`flex items-center px-4 py-3 rounded-lg transition-colors cursor-pointer ${
-                                pathname === '/my-auctions' 
+                            href="/leaderboard"
+                            onClick={(e) => handleNavClick(e, '/leaderboard')}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${
+                                pathname === '/leaderboard' 
                                     ? 'text-primary bg-primary/20 border border-primary/30' 
                                     : 'text-primary hover:bg-primary/10'
                             }`}
                         >
-                            <span className="text-lg">My Auctions</span>
+                            <RiTrophyLine className="text-xl" />
+                            <span className="text-md text-nowrap">Global Leaderboard</span>
+                        </a>
+                        
+                        <a 
+                            href="/earn"
+                            onClick={(e) => handleNavClick(e, '/earn')}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${
+                                pathname === '/earn' 
+                                    ? 'text-primary bg-primary/20 border border-primary/30' 
+                                    : 'text-primary hover:bg-primary/10'
+                            }`}
+                        >
+                            <RiQrScanLine className="text-xl" />
+                            <span className="text-md">Weekly Rewards</span>
                         </a>
                         
                     </nav>

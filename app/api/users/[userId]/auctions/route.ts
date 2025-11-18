@@ -2,19 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/utils/db';
 import User from '@/utils/schemas/User';
 import Auction from '@/utils/schemas/Auction';
+import { getServerSession } from 'next-auth';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
+    const session = await getServerSession(); // Ensure session is initialized if needed in future
+    if(!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
     await connectDB();
 
-    const { userId } = params;
+    const { userId } = await params;
 
     // Find user and their auctions
     const userDoc = await User.findById(userId)
-      .select('wallet fid username hostedAuctions')
+      .select('wallet fid username hostedAuctions twitterProfile')
       .lean();
 
     if (!userDoc) {
@@ -31,7 +39,8 @@ export async function GET(
       username: (user.username as string) || null,
       pfp_url: null as string | null,
       display_name: null as string | null,
-      bio: null as string | null
+      bio: null as string | null,
+      x_username: null as string | null
     };
 
     if (user.fid && !user.fid.toLowerCase().startsWith('none')) {
@@ -41,19 +50,36 @@ export async function GET(
           `https://api.neynar.com/v2/farcaster/user/bulk?fids=${user.fid}`,
           {
             headers: {
-              'api_key': process.env.NEYNAR_API_KEY || '',
+              'x-api-key': process.env.NEYNAR_API_KEY || '',
             },
           }
         );
 
         if (neynarResponse.ok) {
           const neynarData = await neynarResponse.json();
+          console.log('Neynar data for user profile extraction:', {
+            fid: user.fid,
+            verified_accounts: neynarData.users?.[0]?.verified_accounts
+          });
           if (neynarData.users && neynarData.users.length > 0) {
             const neynarUser = neynarData.users[0];
             userProfile.username = neynarUser.username || user.username;
             userProfile.pfp_url = neynarUser.pfp_url || null;
             userProfile.display_name = neynarUser.display_name || null;
             userProfile.bio = neynarUser.profile?.bio?.text || null;
+            
+            // Extract X username from verified_accounts using correct Neynar API structure
+            if (neynarUser.verified_accounts && Array.isArray(neynarUser.verified_accounts)) {
+              const xAccount = neynarUser.verified_accounts.find((account: any) => 
+                account.platform === 'x'
+              );
+              if (xAccount && xAccount.username) {
+                userProfile.x_username = xAccount.username;
+                console.log('Found X username from verified_accounts:', xAccount.username);
+              }
+            }
+            
+            console.log('Final user profile with X username:', userProfile.x_username);
           }
         }
       } catch (neynarError) {
@@ -62,8 +88,19 @@ export async function GET(
       }
     } else {
       // FID starts with "none" or doesn't exist, use wallet-based defaults
-      userProfile.username = `${user.wallet.slice(0, 6)}...${user.wallet.slice(-4)}`;
+      userProfile.username = user.username ? user.username : `${user.wallet.slice(0, 6)}...${user.wallet.slice(-4)}`;
       userProfile.pfp_url = `https://api.dicebear.com/5.x/identicon/svg?seed=${user.wallet.toLowerCase()}`;
+      
+      // Check for Twitter profile in database
+      if (user.twitterProfile && user.twitterProfile.username) {
+        userProfile.x_username = user.twitterProfile.username;
+        if (user.twitterProfile.profileImageUrl) {
+          userProfile.pfp_url = user.twitterProfile.profileImageUrl;
+        }
+        if (user.twitterProfile.name) {
+          userProfile.display_name = user.twitterProfile.name;
+        }
+      }
     }
 
     // Get all auctions hosted by this user
@@ -106,7 +143,8 @@ export async function GET(
         username: userProfile.username,
         pfp_url: userProfile.pfp_url,
         display_name: userProfile.display_name,
-        bio: userProfile.bio
+        bio: userProfile.bio,
+        x_username: userProfile.x_username
       },
       activeAuctions: processAuctions(activeAuctions),
       endedAuctions: processAuctions(endedAuctions)

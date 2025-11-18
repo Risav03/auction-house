@@ -6,9 +6,21 @@ export interface IUser extends Document {
   fid: string;
   wallet: string;
   username?: string;
+  whitelisted: boolean;
   hostedAuctions: Types.ObjectId[];
   bidsWon: Types.ObjectId[];
   participatedAuctions: Types.ObjectId[];
+  twitterProfile?: {
+    id: string;
+    username: string;
+    name: string;
+    profileImageUrl?: string;
+  };
+  notificationDetails?: {
+    url: string;
+    token: string;
+    appFid: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,7 +36,6 @@ const UserSchema: Schema = new Schema(
     },
     fid: {
       type: String,
-      default: null,
       trim: true,
     },
     wallet: {
@@ -32,7 +43,6 @@ const UserSchema: Schema = new Schema(
       required: true,
       unique: true,
       trim: true,
-      lowercase: true,
     },
     username: {
       type: String,
@@ -52,6 +62,38 @@ const UserSchema: Schema = new Schema(
       type: Schema.Types.ObjectId,
       ref: 'Auction',
     }],
+    twitterProfile: {
+      id: {
+        type: String,
+        trim: true,
+      },
+      username: {
+        type: String,
+        trim: true,
+      },
+      name: {
+        type: String,
+        trim: true,
+      },
+      profileImageUrl: {
+        type: String,
+        trim: true,
+      },
+    },
+    notificationDetails: {
+      url: {
+        type: String,
+        trim: true,
+      },
+      token: {
+        type: String,
+        trim: true,
+      },
+      appFid: {
+        type: String,
+        trim: true,
+      },
+    },
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields

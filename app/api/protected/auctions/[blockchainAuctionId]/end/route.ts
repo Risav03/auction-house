@@ -95,12 +95,12 @@ export async function POST(req: NextRequest) {
 
         console.log("BIDDER",contractBidder)
         // Find or create user for each bidder
-        let bidderUser = await User.findOne({ wallet: contractBidder.bidder.toLowerCase() });
+        let bidderUser = await User.findOne({ wallet: contractBidder.bidder });
         
         if (!bidderUser) {
           // Create a new user if they don't exist
           bidderUser = new User({
-            wallet: contractBidder.bidder.toLowerCase(),
+            wallet: contractBidder.bidder,
             username: `User_${contractBidder.bidder.slice(-6)}`, // Generate a default username
             fid: contractBidder.fid || null
           });
@@ -138,16 +138,56 @@ export async function POST(req: NextRequest) {
         });
         
         auction.winningBid = highestBid.bidderUser._id;
+        
+        // Update the winner's bidsWon field
+        await User.findByIdAndUpdate(
+          highestBid.bidderUser._id,
+          { $addToSet: { bidsWon: auction._id } }
+        );
+      } else {
+        auction.winningBid = 'no_bids';
       }
+    } else {
+      auction.winningBid = 'no_bids';
     }
 
-    // End the auction by setting the end date to now
+    // End the auction by setting the end date to now and status to ended
     auction.endDate = currentDate;
+    auction.status = 'ended';
     await auction.save();
+
+    // Trigger fee distribution in the background (true fire-and-forget)
+    // This runs server-side so it continues even if client disconnects
+    if (auction.tokenAddress) {
+      console.log('🔄 Initiating server-side fee distribution for token:', auction.tokenAddress);
+      
+      // Create the fee distribution request
+      const feeDistributionPayload = {
+        token: auction.tokenAddress
+      };
+
+      // True fire-and-forget: no await, no promise chaining
+      // This will not block the response and runs completely independently
+      fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/handleFeeDistribution`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(feeDistributionPayload)
+      }).catch(error => {
+        // Only catch to prevent unhandled rejection warnings
+        console.error('❌ Fee distribution request failed to initiate:', error);
+      });
+      
+      console.log('ℹ️ Fee distribution initiated in background (35-40s expected)');
+    } else {
+      console.log('ℹ️ No token address found, skipping fee distribution');
+    }
 
     return NextResponse.json({
       success: true,
       message: 'Auction ended successfully',
+      tokenAddress: auction.tokenAddress, // Include for client logging
     }, { status: 200 });
 
   } catch (error) {

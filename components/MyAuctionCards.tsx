@@ -19,6 +19,7 @@ import {
   createBaseAccountSDK,
   getCryptoKeyAccount,
 } from "@base-org/account";
+import { checkStatus } from "@/utils/checkStatus";
 
 interface Bidder {
   user: string;
@@ -131,9 +132,13 @@ export default function MyAuctionCards() {
       }
 
       const data = await response.json();
+
+      // Fee distribution will be handled server-side by the auction end API
+      // This ensures it runs regardless of client connection status
+      console.log('✅ Auction ended successfully, fee distribution initiated server-side');
       
       if (loadingToastId) {
-        toast.success("Auction ended successfully! Refreshing auctions...", {
+        toast.success("Auction ended successfully! Fee distribution running in background...", {
           id: loadingToastId,
         });
       }
@@ -198,6 +203,11 @@ export default function MyAuctionCards() {
 
   const endAuction = async (blockchainAuctionId: string) => {
     try {
+      //check if address and session exist
+      if (!address || !session) {
+        toast.error("Please connect your wallet");
+        return;
+      }
       setEndingAuction(blockchainAuctionId);
       setSuccessMessage(null);
 
@@ -213,11 +223,14 @@ export default function MyAuctionCards() {
         auctionAbi
       );
       if (!contract) {
+        console.log("Contract not found!")
         throw new Error("Failed to setup contract connection");
       }
 
+      console.log("Contract", contract);
+
       // Get bidders from contract
-      const contractBidders = await contract.getBidders(blockchainAuctionId);
+      const contractBidders = await contract?.getBidders(blockchainAuctionId);
       console.log("Contract Bidders:", contractBidders);
 
       const formattedBidders = contractBidders.map((item: any) => ({
@@ -238,7 +251,9 @@ export default function MyAuctionCards() {
           throw new Error("Failed to setup write contract");
         }
 
-        toast.loading("Waiting for transaction confirmation...", { id: toastId });
+        toast.loading("Waiting for transaction...", { id: toastId });
+
+        console.log()
         
         const tx = await writeContract.endAuction(blockchainAuctionId);
         await tx.wait(); // Wait for transaction confirmation
@@ -250,13 +265,15 @@ export default function MyAuctionCards() {
         const calls = [
           {
             to: contractAdds.auctions as `0x${string}`,
-            value: context?.client.clientFid !== 309857 ? BigInt(0) : BigInt(0),
+            value: context?.client.clientFid !== 309857 ? BigInt(0) : "0x0",
+
             data: encodeFunctionData({
               abi: auctionAbi,
               functionName: "endAuction",
               args: [blockchainAuctionId],
             }),
           },
+          
         ];
 
         setCurrentEndingAuction({
@@ -269,7 +286,7 @@ export default function MyAuctionCards() {
           
           const provider = createBaseAccountSDK({
             appName: "Bill test app",
-            appLogoUrl: "https://farcaster-miniapp-chi.vercel.app/pfp.jpg",
+            appLogoUrl: "https://www.houseproto.fun/pfp.jpg",
             appChainIds: [base.constants.CHAIN_IDS.base],
           }).getProvider();
 
@@ -278,23 +295,27 @@ export default function MyAuctionCards() {
 
           toast.loading("Submitting transaction...", { id: toastId });
 
-          const result = await provider.request({
+          const callsId:any = await provider.request({
             method: "wallet_sendCalls",
             params: [
               {
-                version: "2.0.0",
+                version: "1.0",
                 from: fromAddress,
                 chainId: numberToHex(base.constants.CHAIN_IDS.base),
-                atomicRequired: true,
                 calls: calls,
               },
             ],
           });
 
-          toast.loading("Processing transaction...", { id: toastId });
-          
-          // Add a 5s delay
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          const result = await checkStatus(callsId);
+
+          if (result) {
+            toast.loading("Transaction confirmed! Saving auction details...", { id: toastId });
+            await processEndAuctionSuccess(blockchainAuctionId, formattedBidders);
+          } else {
+            toast.error("Transaction failed or timed out", { id: toastId });
+            setIsLoading(false);
+          }
         } else {
           toast.loading("Waiting for wallet confirmation...", { id: toastId });
           
@@ -476,7 +497,7 @@ export default function MyAuctionCards() {
         </div>
       </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {filteredAuctions.map((auction) => (
             <div
               key={auction._id}
